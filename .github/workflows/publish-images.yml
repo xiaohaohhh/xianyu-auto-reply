@@ -1,4 +1,4 @@
-name: Publish container images
+name: 构建并发布容器镜像
 
 on:
   push:
@@ -8,13 +8,12 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: Git ref to build and publish
+        description: 要构建并发布的 Git 分支、标签或提交号
         required: false
         default: main
         type: string
 
-# Keep the default token read-only everywhere except the capabilities this
-# workflow needs to publish packages.
+# 默认令牌保持只读，仅授予发布 GHCR 镜像所需的权限。
 permissions:
   contents: read
   packages: write
@@ -25,58 +24,62 @@ concurrency:
 
 jobs:
   build-and-push:
-    # The initial workflow-only commit intentionally skips its redundant
-    # image build. Every normal main-branch update still publishes images.
+    # 仅工作流或文档配置的提交可带 [skip-image-build] 跳过无意义的镜像重建；
+    # 正常 main 分支代码更新仍会自动发布镜像。
     if: >-
       github.event_name != 'push' ||
       !contains(github.event.head_commit.message, '[skip-image-build]')
-    name: Build ${{ matrix.service }}
+    name: 构建并发布 ${{ matrix.display_name }} 镜像
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - service: frontend
+            display_name: 前端
             dockerfile: docker/frontend/Dockerfile
             image: xianyu-frontend
           - service: backend-web
+            display_name: 后端 API
             dockerfile: backend-web/Dockerfile
             image: xianyu-backend-web
           - service: websocket
+            display_name: WebSocket
             dockerfile: websocket/Dockerfile
             image: xianyu-websocket
           - service: scheduler
+            display_name: 调度服务
             dockerfile: scheduler/Dockerfile
             image: xianyu-scheduler
 
     steps:
-      - name: Check out source
+      - name: 检出源代码
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
 
-      - name: Record source revision
+      - name: 记录源代码版本
         id: revision
         shell: bash
         run: |
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "full_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
+      - name: 配置 QEMU 多架构模拟器
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
+      - name: 配置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: 登录 GitHub 容器镜像仓库
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish
+      - name: 构建并发布镜像
         uses: docker/build-push-action@v6
         with:
           context: .

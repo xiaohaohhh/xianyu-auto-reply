@@ -1,19 +1,18 @@
-name: Sync upstream and publish images
+name: 同步上游代码并发布镜像
 
 on:
   schedule:
-    # GitHub may delay scheduled workflows; this requests a sync every six hours.
-    - cron: '17 */6 * * *'
+    # GitHub Actions 的 cron 使用 UTC；以下对应北京时间 00:01、06:01、12:01、18:01。
+    - cron: '1 4,10,16,22 * * *'
   workflow_dispatch:
     inputs:
       force_build:
-        description: Also publish images when upstream has no new commit
+        description: 上游没有新提交时，也强制构建并发布镜像
         required: false
         default: false
         type: boolean
 
-# The sync job needs to update this fork's main branch. The reusable publish
-# workflow receives package write permission from this caller.
+# 同步任务需要写入本 Fork 的 main；复用的镜像发布工作流从此处继承 packages 写入权限。
 permissions:
   contents: write
   packages: write
@@ -24,21 +23,21 @@ concurrency:
 
 jobs:
   sync:
-    name: Merge zhinianboke/xianyu-auto-reply into main
+    name: 合并上游 zhinianboke/xianyu-auto-reply 到 main
     runs-on: ubuntu-latest
     outputs:
       updated: ${{ steps.merge.outputs.updated }}
       revision: ${{ steps.merge.outputs.revision }}
 
     steps:
-      - name: Check out this fork
+      - name: 检出当前 Fork
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Merge the upstream main branch without overwriting fork changes
+      - name: 合并上游 main，保留 Fork 自有修改
         id: merge
         shell: bash
         env:
@@ -55,16 +54,18 @@ jobs:
           before="$(git rev-parse HEAD)"
           upstream_revision="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
 
-          if [ "$before" = "$upstream_revision" ]; then
+          # Fork 常常比上游多出工作流、文档或既有 merge commit。只要上游已经是
+          # 当前 main 的祖先，就没有新上游代码，不能重复发布同一批镜像。
+          if git merge-base --is-ancestor "upstream/${UPSTREAM_BRANCH}" HEAD; then
             echo 'updated=false' >> "$GITHUB_OUTPUT"
             echo "revision=$before" >> "$GITHUB_OUTPUT"
-            echo 'Upstream is already merged.' >> "$GITHUB_STEP_SUMMARY"
+            echo '上游代码已经包含在当前 Fork 中，无需同步。' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           if ! git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
             git merge --abort || true
-            echo '::error::Upstream merge has conflicts. The fork was left unchanged.'
+            echo '::error::上游合并发生冲突，Fork 未作修改。'
             exit 1
           fi
 
@@ -74,13 +75,13 @@ jobs:
           echo 'updated=true' >> "$GITHUB_OUTPUT"
           echo "revision=$after" >> "$GITHUB_OUTPUT"
           {
-            echo '## Upstream synchronized'
+            echo '## 上游代码已同步'
             echo
-            echo "Merged upstream revision \`$upstream_revision\` into \`$after\`."
+            echo "已将上游版本 \`$upstream_revision\` 合并到 \`$after\`。"
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
-    name: Publish synchronized images
+    name: 发布同步后的镜像
     needs: sync
     if: >-
       needs.sync.outputs.updated == 'true' ||

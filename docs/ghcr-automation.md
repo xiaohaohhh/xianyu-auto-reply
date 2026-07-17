@@ -2,7 +2,7 @@
 
 本 fork 使用两个 GitHub Actions 工作流：
 
-1. `.github/workflows/sync-upstream.yml` 每六小时把
+1. `.github/workflows/sync-upstream.yml` 在北京时间每天 `00:01`、`06:01`、`12:01`、`18:01` 把
    `zhinianboke/xianyu-auto-reply:main` 合并进本 fork 的 `main`，也支持手动运行。
    工作流使用普通 Git merge，不会使用 `reset --hard` 或强制推送；如有冲突，fork
    保持原状并让工作流失败。
@@ -24,11 +24,10 @@ ghcr.io/xiaohaohhh/xianyu-scheduler:latest
 ## 首次启用
 
 将本次提交推送到 `xiaohaohhh/xianyu-auto-reply` 后，打开仓库的 **Actions** 页面，手动运行
-`Sync upstream and publish images`。首次运行会合并当前上游新增代码并发布镜像。工作流不需要
+`同步上游代码并发布镜像`。首次运行会合并当前上游新增代码并发布镜像。工作流不需要
 额外的 Registry 密钥，使用仓库的 `GITHUB_TOKEN` 发布到 GHCR。
 
-首次发布完成后，到 GitHub 的 **Packages** 页面把四个容器包设置为 **Public**，部署服务器即可
-匿名拉取。若保持私有，先在服务器执行：
+当前四个镜像已经验证可匿名拉取。若以后将容器包设为私有，先在服务器执行：
 
 ```bash
 echo "$GHCR_TOKEN" | docker login ghcr.io -u xiaohaohhh --password-stdin
