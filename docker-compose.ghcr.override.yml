@@ -1,0 +1,19 @@
+# Combine with docker-compose.yml to run the images published by this fork.
+# Keep the base file so service configuration and named volumes stay identical
+# to the local-source deployment.
+services:
+  backend-web:
+    image: ${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-backend-web:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  websocket:
+    image: ${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-websocket:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  scheduler:
+    image: ${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-scheduler:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-frontend:${IMAGE_TAG:-latest}
+    pull_policy: always

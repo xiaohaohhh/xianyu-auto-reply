@@ -1,0 +1,93 @@
+name: Publish container images
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build and publish
+        required: false
+        default: main
+        type: string
+
+# Keep the default token read-only everywhere except the capabilities this
+# workflow needs to publish packages.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-container-images-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    # The initial workflow-only commit intentionally skips its redundant
+    # image build. Every normal main-branch update still publishes images.
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '[skip-image-build]')
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: frontend
+            dockerfile: docker/frontend/Dockerfile
+            image: xianyu-frontend
+          - service: backend-web
+            dockerfile: backend-web/Dockerfile
+            image: xianyu-backend-web
+          - service: websocket
+            dockerfile: websocket/Dockerfile
+            image: xianyu-websocket
+          - service: scheduler
+            dockerfile: scheduler/Dockerfile
+            image: xianyu-scheduler
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+
+      - name: Record source revision
+        id: revision
+        shell: bash
+        run: |
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "full_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ steps.revision.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.revision.outputs.full_sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

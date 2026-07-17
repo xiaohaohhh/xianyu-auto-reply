@@ -1,0 +1,90 @@
+name: Sync upstream and publish images
+
+on:
+  schedule:
+    # GitHub may delay scheduled workflows; this requests a sync every six hours.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: Also publish images when upstream has no new commit
+        required: false
+        default: false
+        type: boolean
+
+# The sync job needs to update this fork's main branch. The reusable publish
+# workflow receives package write permission from this caller.
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge zhinianboke/xianyu-auto-reply into main
+    runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.merge.outputs.updated }}
+      revision: ${{ steps.merge.outputs.revision }}
+
+    steps:
+      - name: Check out this fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Merge the upstream main branch without overwriting fork changes
+        id: merge
+        shell: bash
+        env:
+          UPSTREAM_REPOSITORY: zhinianboke/xianyu-auto-reply
+          UPSTREAM_BRANCH: main
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream "$UPSTREAM_BRANCH"
+
+          before="$(git rev-parse HEAD)"
+          upstream_revision="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
+
+          if [ "$before" = "$upstream_revision" ]; then
+            echo 'updated=false' >> "$GITHUB_OUTPUT"
+            echo "revision=$before" >> "$GITHUB_OUTPUT"
+            echo 'Upstream is already merged.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if ! git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            git merge --abort || true
+            echo '::error::Upstream merge has conflicts. The fork was left unchanged.'
+            exit 1
+          fi
+
+          after="$(git rev-parse HEAD)"
+          git push origin "HEAD:${UPSTREAM_BRANCH}"
+
+          echo 'updated=true' >> "$GITHUB_OUTPUT"
+          echo "revision=$after" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Upstream synchronized'
+            echo
+            echo "Merged upstream revision \`$upstream_revision\` into \`$after\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish synchronized images
+    needs: sync
+    if: >-
+      needs.sync.outputs.updated == 'true' ||
+      (github.event_name == 'workflow_dispatch' && inputs.force_build)
+    uses: ./.github/workflows/publish-images.yml
+    with:
+      ref: main
