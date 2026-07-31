@@ -17,3 +17,7 @@ services:
   frontend:
     image: ${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-frontend:${IMAGE_TAG:-latest}
     pull_policy: always
+    # Nginx in the cloud image listens on IPv4. `localhost` can resolve to
+    # IPv6 first inside the container and cause a false-negative health check.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider --tries=1 http://127.0.0.1/ || exit 1"]
