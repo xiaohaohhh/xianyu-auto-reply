@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -25,7 +26,7 @@ concurrency:
 jobs:
   build-and-push:
     # 仅工作流或文档配置的提交可带 [skip-image-build] 跳过无意义的镜像重建；
-    # 正常 main 分支代码更新仍会自动发布镜像。
+    # 正常 main/dev 分支代码更新仍会自动发布各自渠道的镜像。
     if: >-
       github.event_name != 'push' ||
       !contains(github.event.head_commit.message, '[skip-image-build]')
@@ -66,6 +67,33 @@ jobs:
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "full_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: 选择镜像发布渠道
+        id: image_tags
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SHORT_SHA: ${{ steps.revision.outputs.short_sha }}
+        run: |
+          case "$REF_NAME" in
+            main)
+              channel_tag=latest
+              revision_tag="sha-${SHORT_SHA}"
+              ;;
+            dev)
+              channel_tag=dev
+              revision_tag="dev-sha-${SHORT_SHA}"
+              ;;
+            *)
+              echo "::error::仅支持 main 或 dev 分支发布，当前分支：$REF_NAME"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "channel_tag=$channel_tag"
+            echo "revision_tag=$revision_tag"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 配置 QEMU 多架构模拟器
         uses: docker/setup-qemu-action@v3
 
@@ -87,8 +115,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ steps.revision.outputs.short_sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.image_tags.outputs.channel_tag }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.image_tags.outputs.revision_tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.revision.outputs.full_sha }}
