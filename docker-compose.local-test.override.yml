@@ -1,0 +1,69 @@
+# Combine with docker-compose.yml for isolated local-source testing.
+# Do not combine this file with docker-compose.ghcr.override.yml.
+services:
+  mysql:
+    container_name: xianyu-local-test-mysql
+
+  redis:
+    container_name: xianyu-local-test-redis
+
+  backend-web:
+    container_name: xianyu-local-test-backend-web
+    build:
+      context: .
+      dockerfile: docker/backend-web.local-test.Dockerfile
+      args:
+        BASE_IMAGE: ${LOCAL_TEST_BACKEND_BASE_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-backend-web:${IMAGE_TAG:-dev}}
+    environment:
+      AUTO_START_CRAWL_JOBS: "false"
+      ENABLE_REMOTE_ADS: "false"
+      ENABLE_REMOTE_ANNOUNCEMENTS: "false"
+      ENABLE_REMOTE_POPUP_ANNOUNCEMENTS: "false"
+      SQL_ECHO: "false"
+    healthcheck:
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 300s
+
+  websocket:
+    container_name: xianyu-local-test-websocket
+    build:
+      context: .
+      dockerfile: docker/websocket.local-test.Dockerfile
+      args:
+        BASE_IMAGE: ${LOCAL_TEST_WEBSOCKET_BASE_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-websocket:${IMAGE_TAG:-dev}}
+    environment:
+      AUTO_START_WEBSOCKET: "false"
+      SQL_ECHO: "false"
+    healthcheck:
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 180s
+
+  scheduler:
+    container_name: xianyu-local-test-scheduler
+    build:
+      context: .
+      dockerfile: docker/scheduler.local-test.Dockerfile
+      args:
+        BASE_IMAGE: ${LOCAL_TEST_SCHEDULER_BASE_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-scheduler:${IMAGE_TAG:-dev}}
+    environment:
+      SQL_ECHO: "false"
+    healthcheck:
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 180s
+
+  frontend:
+    container_name: xianyu-local-test-frontend
+    build:
+      context: .
+      dockerfile: docker/frontend.local-test.Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${LOCAL_TEST_NODE_BASE_IMAGE:-docker.m.daocloud.io/library/node:18-alpine}
+        RUNTIME_IMAGE: ${LOCAL_TEST_FRONTEND_BASE_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/xiaohaohhh}/xianyu-frontend:${IMAGE_TAG:-dev}}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider --tries=1 http://127.0.0.1/ || exit 1"]

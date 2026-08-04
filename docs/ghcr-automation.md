@@ -22,6 +22,52 @@
 `dev` 不合并回 `main`。当需要吸收某一项上游改动时，从 `main` 选择明确的提交并手动
 `git cherry-pick <提交号>` 到 `dev`，完成修复验证后再部署新的 `dev` 镜像。
 
+## 本地源码测试
+
+修改 `dev` 源码后，先运行隔离的本地测试栈：
+
+```bash
+cd /mnt/d/hao/project/xianyu/xianyu-auto-reply
+bash scripts/run_local_test.sh
+```
+
+该测试栈以当前 `:dev` 云端镜像作为依赖环境，并把工作区中的后端、WebSocket、调度源码
+覆盖进测试镜像；前端使用当前源码重新编译后覆盖进 `:dev` 运行镜像。这样既验证当前源码，
+又无需重复下载 Python、Chromium 等大型依赖。应用端口为 `19000`、`18089`、`18090`、
+`18091`，并使用独立容器名、网络和命名卷。正在运行的 `:dev` 云端镜像栈继续使用
+`9000`、`8089`、`8090`、`8091`。
+
+第一次启动使用全新的测试数据库，需要创建全部数据表，因此后端进入健康状态可能需要数分钟；
+测试覆盖配置已为首次初始化保留更长的健康检查窗口。启动脚本会等待所有服务健康，并自动
+验证四个 HTTP 地址均返回 `200`。
+
+默认基础镜像跟随 `.env` 中的 `IMAGE_REGISTRY` 与 `IMAGE_TAG`；可分别通过
+`LOCAL_TEST_BACKEND_BASE_IMAGE`、`LOCAL_TEST_WEBSOCKET_BASE_IMAGE`、
+`LOCAL_TEST_SCHEDULER_BASE_IMAGE`、`LOCAL_TEST_FRONTEND_BASE_IMAGE` 覆盖。前端编译阶段的
+Node 镜像可通过 `LOCAL_TEST_NODE_BASE_IMAGE` 覆盖。
+
+该轻量测试方式复用基础镜像中已经安装的 Python 与浏览器依赖，适用于业务源码和前端修改。
+若修改了 `pyproject.toml` 中的依赖列表，应先为新依赖补充对应的本地构建验证，再发布新的
+`dev` 镜像。
+
+测试地址：
+
+```text
+http://127.0.0.1:19000/
+http://127.0.0.1:18089/health
+http://127.0.0.1:18090/health
+http://127.0.0.1:18091/health
+```
+
+测试完成后停止本地栈：
+
+```bash
+bash scripts/stop_local_test.sh
+```
+
+确认本地测试通过后，再提交并推送 `dev`，由 Actions 构建新的 `:dev` 镜像；部署机运行
+`bash scripts/update_from_ghcr.sh` 才会应用该镜像。
+
 发布的镜像为：
 
 ```text
